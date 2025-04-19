@@ -209,7 +209,7 @@ void setup() {
 
   lcd.createChar(0, checkSymbol); // ✔️
   lcd.createChar(1, crossSymbol); // ❌
-  lcd.createChar(2, banSymbol);   // 🚫
+lcd.createChar(2, banSymbol);   // 🚫
 
 
   myStepper.setMaxSpeed(500);
