@@ -3,6 +3,7 @@
 #include <LCD_I2C.h>
 #include <HCSR04.h>
 #include <Buzzer.h>
+#include <Button.h>
 
 // Define Pins
 #define TRIGGER_PIN 2
@@ -12,9 +13,11 @@
 #define IN_3 10
 #define IN_4 11
 #define MOTOR_INTERFACE_TYPE 4
+#define BTN_PIN 12
 const int PIN_RED   = 7;
 const int PIN_GREEN = 6;
 const int PIN_BLUE  = 5;
+
 
 AccelStepper myStepper(MOTOR_INTERFACE_TYPE, IN_1, IN_3, IN_2, IN_4);
 LCD_I2C lcd(0x27, 16, 2);
@@ -36,6 +39,8 @@ const long openPosition = 1000;
 const unsigned long measureInterval = 50;
 const unsigned long alarmTimeout = 3000;
 const unsigned long colorInterval = 250;
+const unsigned long minAngle = 10;
+const unsigned long maxAngle = 170;
 
 // Paramètres configurables
 int alarmLimit = 15;
@@ -82,12 +87,37 @@ byte banSymbol[8] = {
   B00000
 };
 
+int getCurrentAngle() {  // return map angle
+  return map(myStepper.currentPosition(), closedPosition, openPosition, minAngle, maxAngle);
+}
 
 double measureDistance() {
   return distanceSensor.dist();
 }
 
-void displayLCD(double distance) {
+void displayLCDDoor(double distance) {
+  lcd.setCursor(0, 0);
+  lcd.print("Dist: ");
+  lcd.print(distance);
+  lcd.print(" cm");
+
+  lcd.setCursor(0, 1);
+  switch (state) {
+    case CLOSED:
+      lcd.print("Porte: Closed");
+      break;
+    case OPEN:
+      lcd.print("Porte: Open   ");
+      break;
+    default:
+      lcd.print("Porte: ");
+      lcd.print(getCurrentAngle());
+      lcd.print(" deg"       );
+      break;
+  }
+}
+
+void displayLCDAlarm(double distance) {
   lcd.setCursor(0, 0);
   lcd.print("Dist: ");
   lcd.print(distance);
@@ -96,9 +126,9 @@ void displayLCD(double distance) {
   lcd.setCursor(0, 1);
   lcd.print("Alarme: ");
   if (alarmActive) {
-    lcd.print("on ");
+    lcd.print("on      ");
   } else {
-    lcd.print("off");
+    lcd.print("off     ");
   }
 }
 
@@ -108,7 +138,7 @@ void displayCheck() {
 }
 
 void displayCross() {
-  tempMessage = "[ERR]";
+  tempMessage = "[ERREUR]";
   tempMessageStartTime = millis();
 }
 
@@ -203,13 +233,15 @@ void setup() {
   lcd.begin();
   lcd.backlight();
 
+  pinMode(BTN_PIN, INPUT_PULLUP);
+
   pinMode(PIN_RED,   OUTPUT);
   pinMode(PIN_GREEN, OUTPUT);
   pinMode(PIN_BLUE,  OUTPUT);
 
   lcd.createChar(0, checkSymbol); // ✔️
   lcd.createChar(1, crossSymbol); // ❌
-lcd.createChar(2, banSymbol);   // 🚫
+  lcd.createChar(2, banSymbol);   // 🚫
 
 
   myStepper.setMaxSpeed(500);
@@ -240,7 +272,13 @@ void loop() {
     lcd.clear();  // on vide juste après la fin du message
   }
 } else {
-  displayLCD(distance);
+  if (estClic(currentTime)) {
+    updateState(distance); 
+    displayLCDDoor(distance);
+  } else {
+    displayLCDAlarm(distance);
+    updateAlarm(distance);
+  }
 }
 
 
@@ -250,18 +288,16 @@ void loop() {
     distance = measureDistance();
   }
 
-  updateAlarm(distance);
-  //updateState(distance);
-  //myStepper.run();
+  
 
-  //displayLCD(distance);
+  myStepper.run();
 
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
     input.trim();
 
     if (input == "gdist") {
-      Serial.println((int)distance);
+      Serial.println((double)distance);
       return;
     }
 
@@ -308,3 +344,28 @@ void loop() {
     displayCross(); // commande inconnue
   }
 }
+
+int estClic(unsigned long ct) {
+  static unsigned long lastTime = 0;
+  static int lastState = HIGH;
+  const int rate = 50;
+  static int clic = 0;
+
+  if (ct - lastTime < rate) {
+    return clic; // Trop rapide
+  }
+
+  lastTime = ct;
+
+  int state = digitalRead(BTN_PIN);
+
+  if (state == LOW) {
+    if (state != lastState) {
+      clic = !clic;
+    }
+  }
+
+  lastState = state;
+
+  return clic;
+} // end of estClic
