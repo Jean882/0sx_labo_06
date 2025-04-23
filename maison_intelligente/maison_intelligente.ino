@@ -4,6 +4,8 @@
 #include <HCSR04.h>
 #include <Buzzer.h>
 #include <Button.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 // Define Pins
 #define TRIGGER_PIN 2
@@ -14,6 +16,19 @@
 #define IN_4 11
 #define MOTOR_INTERFACE_TYPE 4
 #define BTN_PIN 12
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+// The pins for I2C are defined by the Wire-library. 
+// On an arduino UNO:       A4(SDA), A5(SCL)
+// On an arduino MEGA 2560: 20(SDA), 21(SCL)
+// On an arduino LEONARDO:   2(SDA),  3(SCL), ...
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
 const int PIN_RED   = 7;
 const int PIN_GREEN = 6;
 const int PIN_BLUE  = 5;
@@ -36,6 +51,8 @@ unsigned long lastColorSwitch = 0;
 // Constantes fixes
 const long closedPosition = 0;
 const long openPosition = 1000;
+const int distanceThresholdOpen = 30;
+const int distanceThresholdClose = 60;
 const unsigned long measureInterval = 50;
 const unsigned long alarmTimeout = 3000;
 const unsigned long colorInterval = 250;
@@ -197,7 +214,7 @@ void updateAlarm(double distance) {
 void updateState(double distance) {
   switch (state) {
     case CLOSED:
-      if (distance < limInf) {
+      if (distance < distanceThresholdOpen) {
         state = OPENING;
         myStepper.enableOutputs();
         myStepper.moveTo(openPosition);
@@ -212,7 +229,7 @@ void updateState(double distance) {
       break;
 
     case OPEN:
-      if (distance > limSup) {
+      if (distance > distanceThresholdClose) {
         state = CLOSING;
         myStepper.enableOutputs();
         myStepper.moveTo(closedPosition);
