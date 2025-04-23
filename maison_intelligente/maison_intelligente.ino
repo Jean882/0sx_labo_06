@@ -1,3 +1,4 @@
+// Librairies
 #include <AccelStepper.h>
 #include <Wire.h>
 #include <LCD_I2C.h>
@@ -17,23 +18,19 @@
 #define MOTOR_INTERFACE_TYPE 4
 #define BTN_PIN 12
 
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library. 
-// On an arduino UNO:       A4(SDA), A5(SCL)
-// On an arduino MEGA 2560: 20(SDA), 21(SCL)
-// On an arduino LEONARDO:   2(SDA),  3(SCL), ...
+// RGB LED PINS
+const int PIN_RED   = 7;
+const int PIN_GREEN = 6;
+const int PIN_BLUE  = 5;
+
+// SSD1306 0x3C
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-
-const int PIN_RED   = 7;
-const int PIN_GREEN = 6;
-const int PIN_BLUE  = 5;
-
-
+// AccepStepper motor
 AccelStepper myStepper(MOTOR_INTERFACE_TYPE, IN_1, IN_3, IN_2, IN_4);
 LCD_I2C lcd(0x27, 16, 2);
 HCSR04 distanceSensor(TRIGGER_PIN, ECHO_PIN);
@@ -51,8 +48,6 @@ unsigned long lastColorSwitch = 0;
 // Constantes fixes
 const long closedPosition = 0;
 const long openPosition = 1000;
-const int distanceThresholdOpen = 30;
-const int distanceThresholdClose = 60;
 const unsigned long measureInterval = 50;
 const unsigned long alarmTimeout = 3000;
 const unsigned long colorInterval = 250;
@@ -60,9 +55,11 @@ const unsigned long minAngle = 10;
 const unsigned long maxAngle = 170;
 
 // Paramètres configurables
+int distanceThresholdOpen = 30;
+int distanceThresholdClose = 60;
 int alarmLimit = 15;
-int limInf = 20;
-int limSup = 80;
+int limInf = 30;
+int limSup = 60;
 
 bool alarmActive = false;
 bool ledRGBState = false;
@@ -71,47 +68,19 @@ String tempMessage = "";
 unsigned long tempMessageStartTime = 0;
 const unsigned long tempMessageDuration = 3000;
 
-byte checkSymbol[8] = {
-  B00000,
-  B00001,
-  B00010,
-  B10100,
-  B01000,
-  B00000,
-  B00000,
-  B00000
-};
+#pragma region
 
-byte crossSymbol[8] = {
-  B00000,
-  B10001,
-  B01010,
-  B00100,
-  B01010,
-  B10001,
-  B00000,
-  B00000
-};
-
-byte banSymbol[8] = {
-  B11111,
-  B10001,
-  B01010,
-  B00100,
-  B01010,
-  B10001,
-  B11111,
-  B00000
-};
-
-int getCurrentAngle() {  // return map angle
+// return map angle
+int getCurrentAngle() { 
   return map(myStepper.currentPosition(), closedPosition, openPosition, minAngle, maxAngle);
 }
 
+// return distance
 double measureDistance() {
   return distanceSensor.dist();
 }
 
+// LCD Doors
 void displayLCDDoor(double distance) {
   lcd.setCursor(0, 0);
   lcd.print("Dist: ");
@@ -129,11 +98,12 @@ void displayLCDDoor(double distance) {
     default:
       lcd.print("Porte: ");
       lcd.print(getCurrentAngle());
-      lcd.print(" deg"       );
+      lcd.print(" deg       ");
       break;
   }
 }
 
+// LCD Alarm
 void displayLCDAlarm(double distance) {
   lcd.setCursor(0, 0);
   lcd.print("Dist: ");
@@ -149,40 +119,92 @@ void displayLCDAlarm(double distance) {
   }
 }
 
+// Dessin check
+void drawCheckSymbol() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  
+  display.drawLine(48, 32, 64, 48, SSD1306_WHITE);
+  display.drawLine(64, 48, 80, 16, SSD1306_WHITE);
+  
+  display.display();
+}
+
+// Dessin du X
+void drawCrossSymbol() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  
+  display.drawLine(48, 16, 80, 48, SSD1306_WHITE); // Diagonale \
+  
+  display.drawLine(48, 48, 80, 16, SSD1306_WHITE); // Diagonale /
+  
+  display.display();
+}
+
+// Dessin du cercle
+void drawErrorSymbol() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  
+  display.drawCircle(64, 32, 25, SSD1306_WHITE); // Cercle
+  display.drawLine(48, 16, 80, 48, SSD1306_WHITE); // Diagonale \ 
+  display.drawLine(48, 48, 80, 16, SSD1306_WHITE); // Diagonale /
+  
+  display.display();
+}
+
 void displayCheck() {
-  tempMessage = "[OK]";
+  drawCheckSymbol();
   tempMessageStartTime = millis();
+  tempMessage = "check"; 
 }
 
 void displayCross() {
-  tempMessage = "[ERREUR]";
+  drawCrossSymbol();
   tempMessageStartTime = millis();
+  tempMessage = "cross"; 
 }
 
-void displayErrorSymbol() {
-  tempMessage = "[!!!]";
+void displayError() {
+  drawErrorSymbol();
   tempMessageStartTime = millis();
+  tempMessage = "error"; 
 }
 
+void updateTempMessage() {
+  if (tempMessage != "" && millis() - tempMessageStartTime >= tempMessageDuration) {
+    tempMessage = "";
+    display.clearDisplay(); // Efface l'écran après 3 secondes
+    display.display();
+  }
+}
 
-
+// RBG LED RED
 void redColor() {
   digitalWrite(PIN_RED, LOW);
   digitalWrite(PIN_GREEN, HIGH);
   digitalWrite(PIN_BLUE, HIGH);
 }
 
+// RBG LED BLUE
 void blueColor() {
   digitalWrite(PIN_BLUE, LOW);
   digitalWrite(PIN_GREEN, HIGH);
   digitalWrite(PIN_RED, HIGH);
 }
 
+// RBG LED NO COLORS
 void noColors() {
   digitalWrite(PIN_BLUE, HIGH);
   digitalWrite(PIN_GREEN, HIGH);
   digitalWrite(PIN_RED, HIGH);
 }
+
+#pragma endregion
 
 void updateAlarm(double distance) {
   unsigned long currentTime = millis();
@@ -245,6 +267,8 @@ void updateState(double distance) {
   }
 }
 
+#pragma region setup - loop
+
 void setup() {
   Serial.begin(115200);
   lcd.begin();
@@ -256,15 +280,18 @@ void setup() {
   pinMode(PIN_GREEN, OUTPUT);
   pinMode(PIN_BLUE,  OUTPUT);
 
-  lcd.createChar(0, checkSymbol); // ✔️
-  lcd.createChar(1, crossSymbol); // ❌
-  lcd.createChar(2, banSymbol);   // 🚫
-
-
   myStepper.setMaxSpeed(500);
   myStepper.setAcceleration(250);
   myStepper.setCurrentPosition(closedPosition);
   myStepper.disableOutputs();
+
+  // Initialisation OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;); // boucle bloquante si échec
+  }
+  display.clearDisplay();
+  display.display();
 
   while (millis() <= 2000) {
     lcd.setCursor(0, 0);
@@ -278,17 +305,11 @@ void loop() {
   unsigned long currentTime = millis();
   static double distance = 0;
 
-  if (tempMessage != "") {
-  if (millis() - tempMessageStartTime <= tempMessageDuration) {
-    lcd.setCursor(0, 0);
-    lcd.print("     " + tempMessage + "      ");
-    lcd.setCursor(0, 1);
-    lcd.print("                ");  // effacer ligne 1
-  } else {
-    tempMessage = "";
-    lcd.clear();  // on vide juste après la fin du message
+  if (currentTime - lastMeasureTime >= measureInterval) {
+    lastMeasureTime = currentTime;
+    distance = measureDistance();
   }
-} else {
+
   if (estClic(currentTime)) {
     updateState(distance); 
     displayLCDDoor(distance);
@@ -296,28 +317,22 @@ void loop() {
     displayLCDAlarm(distance);
     updateAlarm(distance);
   }
-}
-
-
-
-  if (currentTime - lastMeasureTime >= measureInterval) {
-    lastMeasureTime = currentTime;
-    distance = measureDistance();
-  }
-
-  
 
   myStepper.run();
 
+  updateTempMessage();
+
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
-    input.trim();
+    input.trim();  // Enlever les espaces autour de la chaîne
 
     if (input == "gdist") {
       Serial.println((double)distance);
+      displayCheck();
       return;
     }
 
+    // Commande de configuration de l'alarme
     if (input.startsWith("cfg;alm;")) {
       int newVal = input.substring(8).toInt();
       alarmLimit = newVal;
@@ -328,39 +343,47 @@ void loop() {
       return;
     }
 
+    // Commande de configuration du seuil d'ouverture
     if (input.startsWith("cfg;lim_inf;")) {
       int newVal = input.substring(12).toInt();
-      if (newVal >= limSup) {
-        Serial.println("Erreur – Limite inférieure plus grande que limite supérieure");
-        displayErrorSymbol();
+      if (newVal >= distanceThresholdClose) {
+        Serial.println("Erreur – Seuil d'ouverture supérieur ou égal au seuil de fermeture.");
+        displayCross();
       } else {
-        limInf = newVal;
-        Serial.print("Il configure sa limite inférieure du moteur à ");
-        Serial.print(limInf);
+        distanceThresholdOpen = newVal;
+        Serial.print("Seuil d’ouverture de porte configuré à ");
+        Serial.print(distanceThresholdOpen);
         Serial.println(" cm.");
         displayCheck();
       }
       return;
     }
 
+    // Commande de configuration du seuil de fermeture
     if (input.startsWith("cfg;lim_sup;")) {
       int newVal = input.substring(12).toInt();
-      if (limInf >= newVal) {
-        Serial.println("Erreur – Limite inférieure plus grande que limite supérieure");
-        displayErrorSymbol();
+      if (distanceThresholdOpen >= newVal) {
+        Serial.println("Erreur – Seuil de fermeture inférieur ou égal au seuil d'ouverture.");
+        displayCross();
       } else {
-        limSup = newVal;
-        Serial.print("Il configure sa limite supérieure du moteur à ");
-        Serial.print(limSup);
+        distanceThresholdClose = newVal;
+        Serial.print("Seuil de fermeture de porte configuré à ");
+        Serial.print(distanceThresholdClose);
         Serial.println(" cm.");
         displayCheck();
       }
       return;
     }
 
-    displayCross(); // commande inconnue
+    // Si la commande est inconnue, afficher une erreur
+    Serial.println("Commande inconnue");
+    drawErrorSymbol();
+    tempMessageStartTime = millis();
+    tempMessage = "Commande inconnue";
   }
 }
+
+#pragma endregion
 
 int estClic(unsigned long ct) {
   static unsigned long lastTime = 0;
@@ -385,4 +408,4 @@ int estClic(unsigned long ct) {
   lastState = state;
 
   return clic;
-} // end of estClic
+}
